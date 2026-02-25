@@ -6,6 +6,8 @@ public:
     CImageBuffer();
     CImageBuffer(const CImageBuffer& other);
     CImageBuffer& operator=(const CImageBuffer& other);
+    CImageBuffer(CImageBuffer&& other) noexcept;
+    CImageBuffer& operator=(CImageBuffer&& other) noexcept;
     ~CImageBuffer();
 
     bool Create(int width, int height, int channels = 3);

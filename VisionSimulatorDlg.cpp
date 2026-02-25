@@ -15,6 +15,7 @@ BEGIN_MESSAGE_MAP(CVisionSimulatorDlg, CDialogEx)
     ON_WM_GETMINMAXINFO()
     ON_WM_DESTROY()
     ON_WM_TIMER()
+    ON_MESSAGE(WM_PREVIEW_RESULT, &CVisionSimulatorDlg::OnPreviewResult)
     ON_BN_CLICKED(IDC_BTN_LOAD,       &CVisionSimulatorDlg::OnBnClickedLoad)
     ON_BN_CLICKED(IDC_BTN_RUN,        &CVisionSimulatorDlg::OnBnClickedRun)
     ON_BN_CLICKED(IDC_BTN_STOP,       &CVisionSimulatorDlg::OnBnClickedStop)
@@ -51,6 +52,12 @@ CVisionSimulatorDlg::CVisionSimulatorDlg(CWnd* pParent)
     , m_nSelectedMiniViewer(-1)
     , m_nEditingSequenceStep(-1)
     , m_bPreviewPending(false)
+    , m_pPreviewThread(nullptr)
+    , m_hPreviewReady(NULL)
+    , m_hPreviewStop(NULL)
+    , m_bPreviewCancel(false)
+    , m_bNewPreviewPending(false)
+    , m_pPreviewAlgCopy(nullptr)
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -58,6 +65,8 @@ CVisionSimulatorDlg::CVisionSimulatorDlg(CWnd* pParent)
 CVisionSimulatorDlg::~CVisionSimulatorDlg()
 {
     if (m_pCurrentAlgorithm) { delete m_pCurrentAlgorithm; m_pCurrentAlgorithm = nullptr; }
+    CSingleLock lock(&m_csPreview, TRUE);
+    if (m_pPreviewAlgCopy) { delete m_pPreviewAlgCopy; m_pPreviewAlgCopy = nullptr; }
 }
 
 void CVisionSimulatorDlg::DoDataExchange(CDataExchange* pDX)
@@ -93,6 +102,7 @@ BOOL CVisionSimulatorDlg::OnInitDialog()
 
     m_bInitialized = true;
     LayoutControls();
+    StartPreviewThread();
     SetStatus(_T("Ready - Load an image to begin | Right-click drag to add ROI"));
     return TRUE;
 }
@@ -300,6 +310,7 @@ void CVisionSimulatorDlg::OnDestroy()
 {
     KillTimer(TIMER_PREVIEW);
     m_sequenceManager.StopExecution();
+    StopPreviewThread();
     CDialogEx::OnDestroy();
 }
 
@@ -309,7 +320,7 @@ void CVisionSimulatorDlg::OnTimer(UINT_PTR nIDEvent)
     {
         KillTimer(TIMER_PREVIEW);
         m_bPreviewPending = false;
-        RunPreview();
+        QueuePreview();  // fire preview on background thread
     }
     CDialogEx::OnTimer(nIDEvent);
 }
@@ -403,77 +414,179 @@ LRESULT CVisionSimulatorDlg::OnParamChanged(WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-void CVisionSimulatorDlg::RunPreview()
+// ============================================================================
+// Background Preview Thread
+// ============================================================================
+
+void CVisionSimulatorDlg::StartPreviewThread()
+{
+    m_hPreviewReady = ::CreateEvent(NULL, FALSE, FALSE, NULL);  // auto-reset
+    m_hPreviewStop  = ::CreateEvent(NULL, TRUE,  FALSE, NULL);  // manual-reset
+
+    m_pPreviewThread = AfxBeginThread(PreviewThreadProc, this,
+        THREAD_PRIORITY_BELOW_NORMAL, 0, CREATE_SUSPENDED, NULL);
+    if (m_pPreviewThread)
+    {
+        m_pPreviewThread->m_bAutoDelete = FALSE;
+        m_pPreviewThread->ResumeThread();
+    }
+}
+
+void CVisionSimulatorDlg::StopPreviewThread()
+{
+    if (!m_pPreviewThread) return;
+
+    m_bPreviewCancel = true;
+    if (m_hPreviewStop) ::SetEvent(m_hPreviewStop);
+
+    ::WaitForSingleObject(m_pPreviewThread->m_hThread, 3000);
+    delete m_pPreviewThread;
+    m_pPreviewThread = nullptr;
+
+    if (m_hPreviewReady) { ::CloseHandle(m_hPreviewReady); m_hPreviewReady = NULL; }
+    if (m_hPreviewStop)  { ::CloseHandle(m_hPreviewStop);  m_hPreviewStop  = NULL; }
+}
+
+void CVisionSimulatorDlg::QueuePreview()
 {
     if (!m_originalImage.IsValid()) return;
 
     CAlgorithmBase* pAlg = m_paramPanel.GetAlgorithm();
     if (!pAlg) return;
 
-    // Determine input
-    CImageBuffer previewInput;
+    // Build input image for preview
+    CImageBuffer input;
     if (m_nEditingSequenceStep > 0)
     {
         const auto& history = m_sequenceManager.GetHistory();
         if ((int)history.size() > m_nEditingSequenceStep)
-            previewInput = history[m_nEditingSequenceStep].Clone();
+            input = history[m_nEditingSequenceStep].Clone();
         else
-            previewInput = m_originalImage.Clone();
-    }
-    else if (m_nEditingSequenceStep == 0)
-    {
-        previewInput = m_originalImage.Clone();
+            input = m_originalImage.Clone();
     }
     else
     {
-        previewInput = m_originalImage.Clone();
+        input = m_originalImage.Clone();
+    }
+    if (!input.IsValid()) return;
+
+    // Pack data for thread
+    {
+        CSingleLock lock(&m_csPreview, TRUE);
+        m_previewInputBuf = std::move(input);
+        if (m_pPreviewAlgCopy) { delete m_pPreviewAlgCopy; m_pPreviewAlgCopy = nullptr; }
+        m_pPreviewAlgCopy = pAlg->Clone();
+        m_previewROIs     = m_mainViewer.GetROIs();
+        m_bNewPreviewPending = true;
     }
 
-    if (!previewInput.IsValid()) return;
+    m_bPreviewCancel = true;   // cancel any running preview
+    if (m_hPreviewReady) ::SetEvent(m_hPreviewReady);
+}
 
-    const std::vector<CRect>& rois = m_mainViewer.GetROIs();
-    CImageBuffer previewOutput;
-    bool success = false;
+UINT CVisionSimulatorDlg::PreviewThreadProc(LPVOID pParam)
+{
+    CVisionSimulatorDlg* pDlg = reinterpret_cast<CVisionSimulatorDlg*>(pParam);
+    HANDLE events[2] = { pDlg->m_hPreviewReady, pDlg->m_hPreviewStop };
 
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    if (rois.empty())
+    while (true)
     {
-        success = pAlg->Process(previewInput, previewOutput);
-    }
-    else
-    {
-        previewOutput = previewInput.Clone();
-        success = previewOutput.IsValid();
-        if (success)
+        DWORD dw = ::WaitForMultipleObjects(2, events, FALSE, INFINITE);
+        if (dw == WAIT_OBJECT_0 + 1) break;   // stop event
+        if (dw != WAIT_OBJECT_0) continue;
+
+restart:
+        // Grab data
+        CImageBuffer input;
+        CAlgorithmBase* pAlg = nullptr;
+        std::vector<CRect> rois;
         {
-            for (const CRect& roi : rois)
+            CSingleLock lock(&pDlg->m_csPreview, TRUE);
+            if (!pDlg->m_bNewPreviewPending) continue;
+            input = std::move(pDlg->m_previewInputBuf);
+            pAlg  = pDlg->m_pPreviewAlgCopy;
+            pDlg->m_pPreviewAlgCopy = nullptr;
+            rois  = pDlg->m_previewROIs;
+            pDlg->m_bNewPreviewPending = false;
+        }
+        if (!input.IsValid() || !pAlg) { delete pAlg; continue; }
+
+        pDlg->m_bPreviewCancel = false;
+
+        auto t0 = std::chrono::high_resolution_clock::now();
+        CImageBuffer* pOutput = new CImageBuffer();
+        bool success = false;
+
+        if (rois.empty())
+        {
+            success = pAlg->Process(input, *pOutput);
+        }
+        else
+        {
+            *pOutput = input.Clone();
+            success  = pOutput->IsValid();
+            if (success)
             {
-                CImageBuffer roiIn = previewInput.ExtractRegion(roi);
-                if (!roiIn.IsValid()) continue;
-                CImageBuffer roiOut;
-                if (pAlg->Process(roiIn, roiOut) && roiOut.IsValid())
-                    previewOutput.PasteRegion(roiOut, roi.left, roi.top);
+                for (const CRect& roi : rois)
+                {
+                    if (pDlg->m_bPreviewCancel) { success = false; break; }
+                    CImageBuffer roiIn = input.ExtractRegion(roi);
+                    if (!roiIn.IsValid()) continue;
+                    CImageBuffer roiOut;
+                    if (pAlg->Process(roiIn, roiOut) && roiOut.IsValid())
+                        pOutput->PasteRegion(roiOut, roi.left, roi.top);
+                }
             }
         }
+
+        delete pAlg;
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+        if (success && !pDlg->m_bPreviewCancel && ::IsWindow(pDlg->GetSafeHwnd()))
+        {
+            ::PostMessage(pDlg->GetSafeHwnd(), WM_PREVIEW_RESULT,
+                reinterpret_cast<WPARAM>(pOutput), static_cast<LPARAM>(ms));
+        }
+        else
+        {
+            delete pOutput;
+        }
+
+        // If another preview was queued while we ran, restart immediately
+        {
+            CSingleLock lock(&pDlg->m_csPreview, TRUE);
+            if (pDlg->m_bNewPreviewPending) goto restart;
+        }
     }
+    return 0;
+}
 
-    auto t1 = std::chrono::high_resolution_clock::now();
-    long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+LRESULT CVisionSimulatorDlg::OnPreviewResult(WPARAM wParam, LPARAM lParam)
+{
+    CImageBuffer* pOutput = reinterpret_cast<CImageBuffer*>(wParam);
+    long long ms = static_cast<long long>(lParam);
 
-    if (success && previewOutput.IsValid())
+    if (pOutput && pOutput->IsValid())
     {
+        CAlgorithmBase* pAlg = m_paramPanel.GetAlgorithm();
+        CString algName = pAlg ? pAlg->GetName() : _T("?");
+
         m_mainViewer.ClearOverlayInfo();
-        m_mainViewer.SetImage(previewOutput);
+        m_mainViewer.SetImage(*pOutput);
 
         CString status;
-        status.Format(_T("[미리보기] %s - %lldms"), (LPCTSTR)pAlg->GetName(), ms);
+        status.Format(_T("[미리보기] %s - %lldms"), (LPCTSTR)algName, ms);
         SetStatus(status);
 
         CString logMsg;
-        logMsg.Format(_T("[미리보기] %s (%lldms)"), (LPCTSTR)pAlg->GetName(), ms);
+        logMsg.Format(_T("[미리보기] %s (%lldms)"), (LPCTSTR)algName, ms);
         AddLog(logMsg);
     }
+
+    delete pOutput;
+    return 0;
 }
 
 void CVisionSimulatorDlg::AddLog(const CString& text)

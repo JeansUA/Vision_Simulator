@@ -104,6 +104,30 @@ static void RunStandardHough(
 
     std::vector<int> acc(nRho * nTheta, 0);
 
+#ifdef _OPENMP
+    {
+        int nT = omp_get_max_threads();
+        if (nT > 8) nT = 8;
+        std::vector<std::vector<int>> tAcc(nT, std::vector<int>(nRho * nTheta, 0));
+#pragma omp parallel for schedule(dynamic, 8) num_threads(nT)
+        for (int y = 0; y < nHeight; y++)
+        {
+            int tid = omp_get_thread_num();
+            auto& myAcc = tAcc[tid];
+            for (int x = 0; x < nWidth; x++)
+                if (edges[y*nWidth+x])
+                    for (int t = 0; t < nTheta; t++)
+                    {
+                        int rho = (int)(x * cosTab[t] + y * sinTab[t] + maxRho + 0.5);
+                        if (rho >= 0 && rho < nRho)
+                            myAcc[rho * nTheta + t]++;
+                    }
+        }
+        for (int tid = 0; tid < nT; tid++)
+            for (int i = 0; i < nRho * nTheta; i++)
+                acc[i] += tAcc[tid][i];
+    }
+#else
     for (int y = 0; y < nHeight; y++)
         for (int x = 0; x < nWidth; x++)
             if (edges[y*nWidth+x])
@@ -113,6 +137,7 @@ static void RunStandardHough(
                     if (rho >= 0 && rho < nRho)
                         acc[rho * nTheta + t]++;
                 }
+#endif
 
     // Collect local maxima
     struct Line { double rho, theta; int votes; };

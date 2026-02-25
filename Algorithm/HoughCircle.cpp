@@ -141,6 +141,7 @@ bool CHoughCircle::Process(const CImageBuffer& input, CImageBuffer& output)
 
     std::vector<std::tuple<int,int,int,int>> detectedCircles;  // (x, y, r, votes)
 
+#pragma omp parallel for schedule(dynamic, 1)
     for (int r = nMinR; r <= nMaxR; r += nRadiiStep)
     {
         std::vector<int> acc(nWidth * nHeight, 0);
@@ -155,7 +156,7 @@ bool CHoughCircle::Process(const CImageBuffer& input, CImageBuffer& output)
             sinTab[a] = (int)(sin(angle) * r + 0.5);
         }
 
-        // Vote
+        // Vote (each radius has its own acc — no race condition)
         for (int y = 1; y < nHeight - 1; y++)
             for (int x = 1; x < nWidth - 1; x++)
                 if (edges[y * nWidth + x])
@@ -170,31 +171,39 @@ bool CHoughCircle::Process(const CImageBuffer& input, CImageBuffer& output)
         // Normalize threshold by number of edge points
         int localThresh = (int)(nThresh * nAngles / 100);
 
-        // Find peaks with NMS
+        // Find peaks with NMS → collect into thread-local list
+        std::vector<std::tuple<int,int,int,int>> localCircles;
         for (int cy = r; cy < nHeight - r; cy++)
             for (int cx = r; cx < nWidth - r; cx++)
             {
                 int v = acc[cy * nWidth + cx];
                 if (v < localThresh) continue;
 
-                // Check local maximum
                 bool bMax = true;
                 for (int dy = -2; dy <= 2 && bMax; dy++)
                     for (int dx = -2; dx <= 2 && bMax; dx++)
                         if ((dx || dy) && acc[(cy+dy)*nWidth + cx+dx] >= v) bMax = false;
 
-                if (!bMax) continue;
+                if (bMax)
+                    localCircles.push_back({ cx, cy, r, v });
+            }
 
-                // Check min distance from already detected
+        // Merge into shared list (with min-distance filtering)
+#pragma omp critical
+        {
+            for (auto& lc : localCircles)
+            {
                 bool tooClose = false;
                 for (auto& c : detectedCircles)
                 {
-                    int dx = cx - std::get<0>(c), dy = cy - std::get<1>(c);
+                    int dx = std::get<0>(lc) - std::get<0>(c);
+                    int dy = std::get<1>(lc) - std::get<1>(c);
                     if (dx*dx + dy*dy < nMinDist * nMinDist) { tooClose = true; break; }
                 }
                 if (!tooClose)
-                    detectedCircles.push_back({ cx, cy, r, v });
+                    detectedCircles.push_back(lc);
             }
+        }
     }
 
     // Sort by votes descending, keep top 50

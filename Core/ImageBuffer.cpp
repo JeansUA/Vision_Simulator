@@ -35,6 +35,39 @@ CImageBuffer& CImageBuffer::operator=(const CImageBuffer& other)
     return *this;
 }
 
+CImageBuffer::CImageBuffer(CImageBuffer&& other) noexcept
+    : m_pData(other.m_pData)
+    , m_nWidth(other.m_nWidth)
+    , m_nHeight(other.m_nHeight)
+    , m_nChannels(other.m_nChannels)
+    , m_nStride(other.m_nStride)
+{
+    other.m_pData    = nullptr;
+    other.m_nWidth   = 0;
+    other.m_nHeight  = 0;
+    other.m_nChannels = 0;
+    other.m_nStride  = 0;
+}
+
+CImageBuffer& CImageBuffer::operator=(CImageBuffer&& other) noexcept
+{
+    if (this != &other)
+    {
+        Release();
+        m_pData    = other.m_pData;
+        m_nWidth   = other.m_nWidth;
+        m_nHeight  = other.m_nHeight;
+        m_nChannels = other.m_nChannels;
+        m_nStride  = other.m_nStride;
+        other.m_pData    = nullptr;
+        other.m_nWidth   = 0;
+        other.m_nHeight  = 0;
+        other.m_nChannels = 0;
+        other.m_nStride  = 0;
+    }
+    return *this;
+}
+
 CImageBuffer::~CImageBuffer()
 {
     Release();
@@ -75,7 +108,6 @@ bool CImageBuffer::Create(int width, int height, int channels)
     }
     catch (const std::bad_alloc&)
     {
-        CLogger::Error(_T("CImageBuffer::Create - Memory allocation failed for %zu bytes"), bufferSize);
         m_pData = nullptr;
         m_nWidth = 0;
         m_nHeight = 0;
@@ -84,10 +116,6 @@ bool CImageBuffer::Create(int width, int height, int channels)
         return false;
     }
 
-    memset(m_pData, 0, bufferSize);
-
-    CLogger::Info(_T("CImageBuffer::Create - Created %d x %d x %d buffer (stride=%d)"),
-        m_nWidth, m_nHeight, m_nChannels, m_nStride);
     return true;
 }
 

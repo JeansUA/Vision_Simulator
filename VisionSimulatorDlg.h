@@ -129,4 +129,23 @@ private:
     int   m_nMinWidth;
     int   m_nMinHeight;
     bool  m_bPreviewPending;
+
+    // ---- Background preview thread ----
+    CWinThread*      m_pPreviewThread;
+    HANDLE           m_hPreviewReady;    // auto-reset: signals thread to wake
+    HANDLE           m_hPreviewStop;     // manual-reset: signals thread to exit
+    volatile bool    m_bPreviewCancel;   // cancel current in-progress preview
+    volatile bool    m_bNewPreviewPending; // another preview queued while thread runs
+    CCriticalSection m_csPreview;
+    CImageBuffer     m_previewInputBuf;
+    CAlgorithmBase*  m_pPreviewAlgCopy;  // cloned algo for thread (thread owns it)
+    std::vector<CRect> m_previewROIs;
+
+    static UINT PreviewThreadProc(LPVOID pParam);
+    void  StartPreviewThread();
+    void  StopPreviewThread();
+    void  QueuePreview();
+    afx_msg LRESULT OnPreviewResult(WPARAM wParam, LPARAM lParam);
 };
+
+#define WM_PREVIEW_RESULT (WM_USER + 301)
