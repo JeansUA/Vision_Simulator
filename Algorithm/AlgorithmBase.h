@@ -10,7 +10,8 @@ struct AlgorithmParam {
     double dMaxVal;
     double dDefaultVal;
     double dCurrentVal;
-    int nPrecision; // 0 for integer params
+    int nPrecision;                   // 0 for integer params
+    std::vector<CString> vecOptions;  // 비어있으면 슬라이더, 있으면 콤보박스
 };
 
 class CAlgorithmBase {

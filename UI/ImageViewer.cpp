@@ -20,6 +20,9 @@ END_MESSAGE_MAP()
 
 CImageViewer::CImageViewer()
     : m_hBitmap(NULL)
+    , m_hOffscreen(NULL)
+    , m_szOffscreen(0, 0)
+    , m_bViewDirty(true)
     , m_dZoom(1.0)
     , m_dMinZoom(0.01)
     , m_dMaxZoom(50.0)
@@ -43,11 +46,8 @@ CImageViewer::CImageViewer()
 
 CImageViewer::~CImageViewer()
 {
-    if (m_hBitmap != NULL)
-    {
-        ::DeleteObject(m_hBitmap);
-        m_hBitmap = NULL;
-    }
+    if (m_hBitmap != NULL)   { ::DeleteObject(m_hBitmap);   m_hBitmap   = NULL; }
+    if (m_hOffscreen != NULL) { ::DeleteObject(m_hOffscreen); m_hOffscreen = NULL; }
 }
 
 // ============================================================================
@@ -58,25 +58,23 @@ void CImageViewer::SetImage(const CImageBuffer& image)
 {
     m_image = image.Clone();
     UpdateBitmap();
-    FitToWindow();
-    Invalidate(FALSE);
+    m_bViewDirty = true;
+    FitToWindow();       // FitToWindow calls Invalidate internally
 }
 
 void CImageViewer::ClearImage()
 {
     m_image.Release();
-    if (m_hBitmap != NULL)
-    {
-        ::DeleteObject(m_hBitmap);
-        m_hBitmap = NULL;
-    }
+    if (m_hBitmap != NULL)   { ::DeleteObject(m_hBitmap);   m_hBitmap   = NULL; }
+    if (m_hOffscreen != NULL) { ::DeleteObject(m_hOffscreen); m_hOffscreen = NULL; }
     m_dZoom = 1.0;
     m_ptPan = CPoint(0, 0);
     m_rcROIs.clear();
-    m_nSelectedROI = -1;
-    m_bROIMode = false;
-    m_bDrawingROI = false;
-    m_bHasPixelInfo = false;
+    m_nSelectedROI   = -1;
+    m_bROIMode       = false;
+    m_bDrawingROI    = false;
+    m_bHasPixelInfo  = false;
+    m_bViewDirty     = true;
     Invalidate(FALSE);
 }
 
@@ -118,6 +116,7 @@ void CImageViewer::FitToWindow()
     m_ptPan.x = (rcClient.Width() - scaledW) / 2;
     m_ptPan.y = (rcClient.Height() - scaledH) / 2;
 
+    m_bViewDirty = true;
     Invalidate(FALSE);
 }
 
@@ -142,6 +141,7 @@ void CImageViewer::SetZoom(double zoom)
     m_ptPan.y = (int)(ptCenter.y - imgY * m_dZoom);
 
     ClampPan();
+    m_bViewDirty = true;
     Invalidate(FALSE);
 }
 
@@ -414,6 +414,59 @@ void CImageViewer::DrawROIOverlay(CDC* pDC, const CRect& /*rcClient*/)
     }
 }
 
+void CImageViewer::DrawAlgoOverlay(CDC* pDC, const CRect& rcClient)
+{
+    if (m_strOverlayInfo.IsEmpty()) return;
+
+    // Split text by '\n' into lines
+    std::vector<CString> lines;
+    CString remaining = m_strOverlayInfo;
+    int pos;
+    while ((pos = remaining.Find(_T('\n'))) >= 0)
+    {
+        lines.push_back(remaining.Left(pos));
+        remaining = remaining.Mid(pos + 1);
+    }
+    if (!remaining.IsEmpty()) lines.push_back(remaining);
+    if (lines.empty()) return;
+
+    CFont font;
+    font.CreatePointFont(85, _T("Segoe UI"));
+    CFont* pOldFont = pDC->SelectObject(&font);
+
+    // Measure all lines
+    int lineH = pDC->GetTextExtent(_T("A")).cy + 2;
+    int maxW  = 0;
+    for (const CString& ln : lines)
+    {
+        CSize sz = pDC->GetTextExtent(ln);
+        if (sz.cx > maxW) maxW = sz.cx;
+    }
+
+    int padding = 6;
+    int boxW = maxW + padding * 2;
+    int boxH = (int)lines.size() * lineH + padding;
+
+    // Position: top-right corner of client
+    int bx = rcClient.right - boxW - 6;
+    int by = 6;
+    CRect rcBox(bx, by, bx + boxW, by + boxH);
+
+    // Background semi-opaque dark
+    pDC->FillSolidRect(&rcBox, RGB(0, 0, 0));
+
+    // Green text
+    pDC->SetBkMode(TRANSPARENT);
+    pDC->SetTextColor(RGB(0, 220, 80));
+
+    for (int i = 0; i < (int)lines.size(); i++)
+    {
+        pDC->TextOut(bx + padding, by + padding / 2 + i * lineH, lines[i]);
+    }
+
+    pDC->SelectObject(pOldFont);
+}
+
 void CImageViewer::DrawPixelInfo(CDC* pDC, const CRect& rcClient)
 {
     if (!m_bMouseInWindow || !m_bHasPixelInfo) return;
@@ -465,47 +518,91 @@ void CImageViewer::OnPaint()
 
     CRect rcClient;
     GetClientRect(&rcClient);
+    int W = rcClient.Width(), H = rcClient.Height();
+    if (W <= 0 || H <= 0) return;
 
+    // --- 1. 캐시 갱신 (이미지/줌/팬이 바뀔 때만 HALFTONE StretchBlt 실행) ---
+    bool bSizeChanged = (m_szOffscreen.cx != W || m_szOffscreen.cy != H);
+    if (m_bViewDirty || bSizeChanged || m_hOffscreen == NULL)
+    {
+        if (bSizeChanged && m_hOffscreen)
+        {
+            ::DeleteObject(m_hOffscreen);
+            m_hOffscreen = NULL;
+        }
+
+        CDC offDC;
+        offDC.CreateCompatibleDC(&dc);
+        if (!m_hOffscreen)
+        {
+            m_hOffscreen = ::CreateCompatibleBitmap(dc.GetSafeHdc(), W, H);
+            m_szOffscreen = CSize(W, H);
+        }
+        HBITMAP hPrev = (HBITMAP)offDC.SelectObject(m_hOffscreen);
+
+        CRect rc(0, 0, W, H);
+        offDC.FillSolidRect(&rc, m_clrBackground);
+
+        if (m_image.IsValid() && m_hBitmap)
+        {
+            CDC imgDC;
+            imgDC.CreateCompatibleDC(&dc);
+            HBITMAP hOldImg = (HBITMAP)imgDC.SelectObject(m_hBitmap);
+
+            CRect rcImage = GetImageRect();
+            int prevMode = offDC.SetStretchBltMode(HALFTONE);
+            ::SetBrushOrgEx(offDC.GetSafeHdc(), 0, 0, NULL);
+            offDC.StretchBlt(
+                rcImage.left, rcImage.top, rcImage.Width(), rcImage.Height(),
+                &imgDC, 0, 0, m_image.GetWidth(), m_image.GetHeight(), SRCCOPY);
+            offDC.SetStretchBltMode(prevMode);
+            imgDC.SelectObject(hOldImg);
+        }
+
+        offDC.SelectObject(hPrev);
+        m_bViewDirty = false;
+    }
+
+    // --- 2. 작업 버퍼 = 캐시 복사 + 오버레이 합성 (매 프레임, 매우 빠름) ---
     CDC memDC;
     memDC.CreateCompatibleDC(&dc);
-    CBitmap bmpBuffer;
-    bmpBuffer.CreateCompatibleBitmap(&dc, rcClient.Width(), rcClient.Height());
-    CBitmap* pOldBmp = memDC.SelectObject(&bmpBuffer);
+    CBitmap bmpWork;
+    bmpWork.CreateCompatibleBitmap(&dc, W, H);
+    CBitmap* pOldBmp = memDC.SelectObject(&bmpWork);
 
-    memDC.FillSolidRect(&rcClient, m_clrBackground);
-
-    if (!m_image.IsValid() || m_hBitmap == NULL)
+    // 캐시 복사
+    CDC offDC2;
+    offDC2.CreateCompatibleDC(&dc);
+    if (m_hOffscreen)
     {
-        memDC.SetBkMode(TRANSPARENT);
-        memDC.SetTextColor(RGB(180, 180, 180));
+        HBITMAP hPrev2 = (HBITMAP)offDC2.SelectObject(m_hOffscreen);
+        memDC.BitBlt(0, 0, W, H, &offDC2, 0, 0, SRCCOPY);
+        offDC2.SelectObject(hPrev2);
+    }
+    else
+        memDC.FillSolidRect(&rcClient, m_clrBackground);
+
+    if (!m_image.IsValid())
+    {
+        // "No Image" 텍스트
         CFont font;
         font.CreatePointFont(120, _T("Segoe UI"));
         CFont* pOldFont = memDC.SelectObject(&font);
+        memDC.SetBkMode(TRANSPARENT);
+        memDC.SetTextColor(RGB(180, 180, 180));
         memDC.DrawText(_T("No Image"), &rcClient, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         memDC.SelectObject(pOldFont);
     }
     else
     {
-        CDC imgDC;
-        imgDC.CreateCompatibleDC(&dc);
-        HBITMAP hOldBitmap = (HBITMAP)imgDC.SelectObject(m_hBitmap);
-
-        CRect rcImage = GetImageRect();
-        int prevMode = memDC.SetStretchBltMode(HALFTONE);
-        ::SetBrushOrgEx(memDC.GetSafeHdc(), 0, 0, NULL);
-
-        memDC.StretchBlt(
-            rcImage.left, rcImage.top, rcImage.Width(), rcImage.Height(),
-            &imgDC, 0, 0, m_image.GetWidth(), m_image.GetHeight(), SRCCOPY);
-
-        memDC.SetStretchBltMode(prevMode);
-        imgDC.SelectObject(hOldBitmap);
-
+        // ROI + 알고리즘 오버레이 + 픽셀 정보
         DrawROIOverlay(&memDC, rcClient);
+        DrawAlgoOverlay(&memDC, rcClient);
         DrawPixelInfo(&memDC, rcClient);
     }
 
-    dc.BitBlt(0, 0, rcClient.Width(), rcClient.Height(), &memDC, 0, 0, SRCCOPY);
+    // --- 3. 화면에 단번에 출력 (플리커 없음) ---
+    dc.BitBlt(0, 0, W, H, &memDC, 0, 0, SRCCOPY);
     memDC.SelectObject(pOldBmp);
 }
 
@@ -600,49 +697,48 @@ void CImageViewer::OnMouseMove(UINT nFlags, CPoint point)
     if (m_bDrawingROI)
     {
         m_ptROIEnd = point;
-        Invalidate(FALSE);
+        Invalidate(FALSE);   // ROI 드래그 중 — 오버레이만 재그림 (캐시 유효)
     }
     else if (m_bDragging)
     {
         m_ptPan.x = m_ptPanStart.x + (point.x - m_ptDragStart.x);
         m_ptPan.y = m_ptPanStart.y + (point.y - m_ptDragStart.y);
         ClampPan();
+        m_bViewDirty = true; // 팬 이동 → 캐시 무효화
         Invalidate(FALSE);
     }
 
-    // Update hover pixel info
+    // 픽셀 정보 갱신 (좌표가 실제로 바뀐 경우에만 Invalidate)
     if (m_image.IsValid())
     {
         CPoint imgPt = ScreenToImage(point);
         int w = m_image.GetWidth();
         int h = m_image.GetHeight();
+        bool bInImage = (imgPt.x >= 0 && imgPt.x < w && imgPt.y >= 0 && imgPt.y < h);
 
-        if (imgPt.x >= 0 && imgPt.x < w && imgPt.y >= 0 && imgPt.y < h)
+        bool bChanged = (bInImage != m_bHasPixelInfo) ||
+                        (bInImage && (imgPt.x != m_ptMouseImg.x || imgPt.y != m_ptMouseImg.y));
+
+        if (bInImage)
         {
             m_ptMouseImg    = imgPt;
             m_bHasPixelInfo = true;
 
-            const BYTE* pSrc  = m_image.GetData();
-            int nChannels      = m_image.GetChannels();
-            int nStride        = m_image.GetStride();
-            const BYTE* pPixel = pSrc + imgPt.y * nStride + imgPt.x * nChannels;
+            const BYTE* pSrc   = m_image.GetData();
+            int nChannels       = m_image.GetChannels();
+            int nStride         = m_image.GetStride();
+            const BYTE* pPixel  = pSrc + imgPt.y * nStride + imgPt.x * nChannels;
 
-            if (nChannels == 1)
-            {
-                m_bPixelR = m_bPixelG = m_bPixelB = pPixel[0];
-            }
-            else
-            {
-                m_bPixelB = pPixel[0];
-                m_bPixelG = pPixel[1];
-                m_bPixelR = pPixel[2];
-            }
+            if (nChannels == 1) { m_bPixelR = m_bPixelG = m_bPixelB = pPixel[0]; }
+            else { m_bPixelB = pPixel[0]; m_bPixelG = pPixel[1]; m_bPixelR = pPixel[2]; }
         }
         else
         {
             m_bHasPixelInfo = false;
         }
-        Invalidate(FALSE);
+
+        // 좌표가 바뀔 때만 Invalidate → 마우스 이동 중 불필요한 재그림 제거
+        if (bChanged) Invalidate(FALSE);
     }
 
     CStatic::OnMouseMove(nFlags, point);
@@ -675,6 +771,7 @@ BOOL CImageViewer::OnMouseWheel(UINT nFlags, short zDelta, CPoint pt)
     m_ptPan.y = (int)(ptClient.y - imgY * m_dZoom);
 
     ClampPan();
+    m_bViewDirty = true;
     Invalidate(FALSE);
     return TRUE;
 }
@@ -700,6 +797,9 @@ BOOL CImageViewer::OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message)
 void CImageViewer::OnSize(UINT nType, int cx, int cy)
 {
     CStatic::OnSize(nType, cx, cy);
+    m_bViewDirty = true;   // 크기 변경 → 캐시 무효화
     if (m_image.IsValid())
         FitToWindow();
+    else
+        Invalidate(FALSE);
 }

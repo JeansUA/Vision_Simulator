@@ -7,6 +7,7 @@
 #include "Core/SequenceManager.h"
 #include "Algorithm/AlgorithmManager.h"
 #include "Utils/CommonTypes.h"
+#include <chrono>
 
 class CVisionSimulatorDlg : public CDialogEx {
     DECLARE_DYNAMIC(CVisionSimulatorDlg)
@@ -88,6 +89,10 @@ private:
     CStatic m_staticStatus;
     CStatic m_staticZoom;
 
+    // Log panel
+    CStatic m_grpLog;
+    CEdit   m_editLog;
+
     // Group boxes
     CStatic m_grpAlgorithm, m_grpSequence, m_grpROI, m_grpHistory;
 
@@ -113,6 +118,7 @@ private:
     void SetStatus(const CString& text);
     void UpdateMiniViewers();
     void ClearMiniViewers();
+    void AddLog(const CString& text);
 
     // Real-time preview
     void RunPreview();

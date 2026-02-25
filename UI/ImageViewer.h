@@ -17,6 +17,10 @@ public:
     double GetZoom() const { return m_dZoom; }
     bool HasImage() const { return m_image.IsValid(); }
 
+    // Algorithm overlay (green text, top-right, shown when viewing history image)
+    void SetOverlayInfo(const CString& str) { m_strOverlayInfo = str; Invalidate(FALSE); }
+    void ClearOverlayInfo() { if (!m_strOverlayInfo.IsEmpty()) { m_strOverlayInfo.Empty(); Invalidate(FALSE); } }
+
     // Multi-ROI management
     void AddROI(const CRect& rcROI);
     void RemoveROI(int index);
@@ -53,7 +57,10 @@ protected:
 
 private:
     CImageBuffer m_image;
-    HBITMAP      m_hBitmap;
+    HBITMAP      m_hBitmap;       // source image bitmap (image-space)
+    HBITMAP      m_hOffscreen;    // cached rendered view (screen-space, no overlays)
+    CSize        m_szOffscreen;   // size of cached bitmap
+    bool         m_bViewDirty;    // true when image/zoom/pan changed → re-render cache
     double       m_dZoom;
     double       m_dMinZoom;
     double       m_dMaxZoom;
@@ -80,6 +87,9 @@ private:
     CPoint       m_ptMouseImg;         // image-space coordinates
     BYTE         m_bPixelR, m_bPixelG, m_bPixelB;
 
+    // Algorithm overlay
+    CString      m_strOverlayInfo;     // multi-line text (lines separated by '\n'), shown top-right in green
+
     void UpdateBitmap();
     void ClampPan();
     CRect GetImageRect();
@@ -92,6 +102,7 @@ private:
     // Drawing
     void DrawROIOverlay(CDC* pDC, const CRect& rcClient);
     void DrawPixelInfo(CDC* pDC, const CRect& rcClient);
+    void DrawAlgoOverlay(CDC* pDC, const CRect& rcClient);
 
     // ROI hit-test
     int HitTestROI(CPoint ptScreen) const;  // returns ROI index or -1

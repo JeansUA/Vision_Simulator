@@ -14,18 +14,20 @@
 CBinarize::CBinarize()
 {
     AlgorithmParam paramMethod;
-    paramMethod.strName        = _T("method");
-    paramMethod.strDescription = _T("0=Std,1=Reverse,2=Double,3=Adaptive,4=Otsu");
+    paramMethod.strName        = _T("방식");
+    paramMethod.strDescription = _T("이진화 방식을 선택하세요");
     paramMethod.dMinVal        = 0.0;
     paramMethod.dMaxVal        = 4.0;
     paramMethod.dDefaultVal    = 0.0;
     paramMethod.dCurrentVal    = 0.0;
     paramMethod.nPrecision     = 0;
+    paramMethod.vecOptions     = { _T("표준"), _T("반전"), _T("이중 임계값"),
+                                    _T("적응형"), _T("오츠(자동)") };
     m_params.push_back(paramMethod);
 
     AlgorithmParam paramThreshold;
-    paramThreshold.strName        = _T("threshold");
-    paramThreshold.strDescription = _T("Lower threshold value");
+    paramThreshold.strName        = _T("낮은 임계값");
+    paramThreshold.strDescription = _T("픽셀을 흑/백으로 나누는 기준값 (0~255)");
     paramThreshold.dMinVal        = 0.0;
     paramThreshold.dMaxVal        = 255.0;
     paramThreshold.dDefaultVal    = 128.0;
@@ -34,8 +36,8 @@ CBinarize::CBinarize()
     m_params.push_back(paramThreshold);
 
     AlgorithmParam paramThreshold2;
-    paramThreshold2.strName        = _T("threshold2");
-    paramThreshold2.strDescription = _T("Upper threshold (Double mode)");
+    paramThreshold2.strName        = _T("높은 임계값");
+    paramThreshold2.strDescription = _T("이중 임계값 방식의 상한값 — 이 범위 내 픽셀만 흰색");
     paramThreshold2.dMinVal        = 0.0;
     paramThreshold2.dMaxVal        = 255.0;
     paramThreshold2.dDefaultVal    = 200.0;
@@ -44,8 +46,8 @@ CBinarize::CBinarize()
     m_params.push_back(paramThreshold2);
 
     AlgorithmParam paramBlockSize;
-    paramBlockSize.strName        = _T("blockSize");
-    paramBlockSize.strDescription = _T("Block size for Adaptive (odd, 3-99)");
+    paramBlockSize.strName        = _T("블록 크기");
+    paramBlockSize.strDescription = _T("적응형 방식의 지역 분석 블록 크기 (홀수, 3~99)");
     paramBlockSize.dMinVal        = 3.0;
     paramBlockSize.dMaxVal        = 99.0;
     paramBlockSize.dDefaultVal    = 11.0;

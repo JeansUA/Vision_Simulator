@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "Core/SequenceManager.h"
+#include <chrono>
 
 CSequenceManager::CSequenceManager()
     : m_pThread(nullptr)
@@ -178,6 +179,8 @@ void CSequenceManager::DoExecute()
         CImageBuffer output;
         bool success = false;
 
+        auto tStepStart = std::chrono::high_resolution_clock::now();
+
         if (!bHasROIs)
         {
             // No ROI: process full image
@@ -212,6 +215,9 @@ void CSequenceManager::DoExecute()
             }
         }
 
+        auto tStepEnd = std::chrono::high_resolution_clock::now();
+        long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(tStepEnd - tStepStart).count();
+
         if (success && output.IsValid())
         {
             {
@@ -219,7 +225,7 @@ void CSequenceManager::DoExecute()
                 m_history.push_back(std::move(output));
             }
             if (m_hNotifyWnd && ::IsWindow(m_hNotifyWnd))
-                ::PostMessage(m_hNotifyWnd, WM_SEQUENCE_STEP_DONE, (WPARAM)i, 0);
+                ::PostMessage(m_hNotifyWnd, WM_SEQUENCE_STEP_DONE, (WPARAM)i, (LPARAM)elapsedMs);
         }
         else
         {

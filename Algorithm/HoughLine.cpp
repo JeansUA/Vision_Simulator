@@ -17,19 +17,21 @@ CHoughLine::CHoughLine()
 {
     AlgorithmParam p;
 
-    p.strName = _T("method"); p.strDescription = _T("0=Standard,1=Probabilistic");
+    p.strName = _T("방식"); p.strDescription = _T("라인 검출 방식을 선택하세요");
     p.dMinVal = 0; p.dMaxVal = 1; p.dDefaultVal = 0; p.dCurrentVal = 0; p.nPrecision = 0;
+    p.vecOptions = { _T("표준(무한선)"), _T("확률적(선분 추출)") };
     m_params.push_back(p);
 
-    p.strName = _T("threshold"); p.strDescription = _T("Accumulator threshold (votes)");
+    p.vecOptions.clear();
+    p.strName = _T("검출 임계값"); p.strDescription = _T("라인 검출 기준 투표 수 — 높을수록 강한 라인만 검출");
     p.dMinVal = 10; p.dMaxVal = 300; p.dDefaultVal = 80; p.dCurrentVal = 80; p.nPrecision = 0;
     m_params.push_back(p);
 
-    p.strName = _T("minLength"); p.strDescription = _T("Min segment length (Prob. mode)");
+    p.strName = _T("최소 선분 길이"); p.strDescription = _T("검출할 선분의 최소 길이 (확률적 방식 전용, 픽셀)");
     p.dMinVal = 5; p.dMaxVal = 500; p.dDefaultVal = 30; p.dCurrentVal = 30; p.nPrecision = 0;
     m_params.push_back(p);
 
-    p.strName = _T("maxGap"); p.strDescription = _T("Max gap between segments (Prob.)");
+    p.strName = _T("최대 허용 간격"); p.strDescription = _T("선분 사이 최대 허용 간격 (확률적 방식 전용, 픽셀)");
     p.dMinVal = 1; p.dMaxVal = 100; p.dDefaultVal = 10; p.dCurrentVal = 10; p.nPrecision = 0;
     m_params.push_back(p);
 }

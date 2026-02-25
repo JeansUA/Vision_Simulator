@@ -13,18 +13,20 @@
 CGaussianBlur::CGaussianBlur()
 {
     AlgorithmParam paramMethod;
-    paramMethod.strName        = _T("method");
-    paramMethod.strDescription = _T("0=Gaussian,1=Bilateral,2=Median,3=Box");
+    paramMethod.strName        = _T("방식");
+    paramMethod.strDescription = _T("블러 필터 방식을 선택하세요");
     paramMethod.dMinVal        = 0.0;
     paramMethod.dMaxVal        = 3.0;
     paramMethod.dDefaultVal    = 0.0;
     paramMethod.dCurrentVal    = 0.0;
     paramMethod.nPrecision     = 0;
+    paramMethod.vecOptions     = { _T("가우시안"), _T("양방향(Bilateral)"),
+                                    _T("미디언"), _T("박스(Box)") };
     m_params.push_back(paramMethod);
 
     AlgorithmParam paramKernelSize;
-    paramKernelSize.strName        = _T("kernelSize");
-    paramKernelSize.strDescription = _T("Kernel size (odd, 3-31)");
+    paramKernelSize.strName        = _T("커널 크기");
+    paramKernelSize.strDescription = _T("블러 적용 범위 (홀수값, 클수록 더 흐릿하게)");
     paramKernelSize.dMinVal        = 3.0;
     paramKernelSize.dMaxVal        = 31.0;
     paramKernelSize.dDefaultVal    = 5.0;
@@ -33,8 +35,8 @@ CGaussianBlur::CGaussianBlur()
     m_params.push_back(paramKernelSize);
 
     AlgorithmParam paramSigma;
-    paramSigma.strName        = _T("sigma");
-    paramSigma.strDescription = _T("Gaussian sigma (Gaussian/Bilateral)");
+    paramSigma.strName        = _T("시그마");
+    paramSigma.strDescription = _T("가우시안/양방향 필터 시그마 — 작을수록 선명하게 유지");
     paramSigma.dMinVal        = 0.1;
     paramSigma.dMaxVal        = 10.0;
     paramSigma.dDefaultVal    = 1.0;

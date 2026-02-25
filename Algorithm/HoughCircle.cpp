@@ -16,19 +16,19 @@ CHoughCircle::CHoughCircle()
 {
     AlgorithmParam p;
 
-    p.strName = _T("minRadius"); p.strDescription = _T("Min circle radius (px)");
+    p.strName = _T("최소 반지름"); p.strDescription = _T("검출할 원의 최소 반지름 (픽셀 단위)");
     p.dMinVal = 5.0; p.dMaxVal = 300.0; p.dDefaultVal = 20.0; p.dCurrentVal = 20.0; p.nPrecision = 0;
     m_params.push_back(p);
 
-    p.strName = _T("maxRadius"); p.strDescription = _T("Max circle radius (px)");
+    p.strName = _T("최대 반지름"); p.strDescription = _T("검출할 원의 최대 반지름 (픽셀 단위)");
     p.dMinVal = 10.0; p.dMaxVal = 500.0; p.dDefaultVal = 100.0; p.dCurrentVal = 100.0; p.nPrecision = 0;
     m_params.push_back(p);
 
-    p.strName = _T("threshold"); p.strDescription = _T("Accumulator threshold");
+    p.strName = _T("검출 임계값"); p.strDescription = _T("원 검출 기준값 — 낮을수록 더 많은 원을 검출 (오검출 주의)");
     p.dMinVal = 10.0; p.dMaxVal = 255.0; p.dDefaultVal = 80.0; p.dCurrentVal = 80.0; p.nPrecision = 0;
     m_params.push_back(p);
 
-    p.strName = _T("minDist"); p.strDescription = _T("Min distance between circles");
+    p.strName = _T("최소 간격"); p.strDescription = _T("검출된 원 중심 사이의 최소 거리 (픽셀) — 중복 제거용");
     p.dMinVal = 5.0; p.dMaxVal = 500.0; p.dDefaultVal = 30.0; p.dCurrentVal = 30.0; p.nPrecision = 0;
     m_params.push_back(p);
 }

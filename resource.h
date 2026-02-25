@@ -81,6 +81,10 @@
 #define IDC_BTN_REMOVE_ROI          1094
 #define IDC_BTN_CLEAR_ROIS          1095
 
+// Log panel
+#define IDC_GRP_LOG                 1096
+#define IDC_EDIT_LOG                1097
+
 // Preview timer
 #define TIMER_PREVIEW               1
 

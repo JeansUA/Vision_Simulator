@@ -10,18 +10,21 @@
 CMorphology::CMorphology()
 {
     AlgorithmParam paramOperation;
-    paramOperation.strName        = _T("operation");
-    paramOperation.strDescription = _T("0=Erode,1=Dilate,2=Open,3=Close,4=TopHat,5=BlackHat");
+    paramOperation.strName        = _T("연산");
+    paramOperation.strDescription = _T("모폴로지 연산을 선택하세요");
     paramOperation.dMinVal        = 0.0;
     paramOperation.dMaxVal        = 5.0;
     paramOperation.dDefaultVal    = 0.0;
     paramOperation.dCurrentVal    = 0.0;
     paramOperation.nPrecision     = 0;
+    paramOperation.vecOptions     = { _T("침식(Erode)"), _T("팽창(Dilate)"),
+                                       _T("열기(Open)"), _T("닫기(Close)"),
+                                       _T("탑햇(Top Hat)"), _T("블랙햇(Black Hat)") };
     m_params.push_back(paramOperation);
 
     AlgorithmParam paramKernelSize;
-    paramKernelSize.strName        = _T("kernelSize");
-    paramKernelSize.strDescription = _T("Structuring element size (odd, 3-21)");
+    paramKernelSize.strName        = _T("커널 크기");
+    paramKernelSize.strDescription = _T("구조 요소(커널) 크기 (홀수, 클수록 효과가 강함)");
     paramKernelSize.dMinVal        = 3.0;
     paramKernelSize.dMaxVal        = 21.0;
     paramKernelSize.dDefaultVal    = 3.0;
@@ -30,8 +33,8 @@ CMorphology::CMorphology()
     m_params.push_back(paramKernelSize);
 
     AlgorithmParam paramIterations;
-    paramIterations.strName        = _T("iterations");
-    paramIterations.strDescription = _T("Number of iterations (1-10)");
+    paramIterations.strName        = _T("반복 횟수");
+    paramIterations.strDescription = _T("연산 반복 횟수 (횟수가 많을수록 효과가 강해짐)");
     paramIterations.dMinVal        = 1.0;
     paramIterations.dMaxVal        = 10.0;
     paramIterations.dDefaultVal    = 1.0;

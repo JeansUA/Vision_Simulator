@@ -12,13 +12,15 @@ CGrayscale::CGrayscale()
     // Channel mode parameter
     // 0=Luminance, 1=R, 2=G, 3=B, 4=H(Hue), 5=S(Sat), 6=V(Val)
     AlgorithmParam paramMode;
-    paramMode.strName        = _T("channel");
-    paramMode.strDescription = _T("0=Lum,1=R,2=G,3=B,4=H,5=S,6=V");
+    paramMode.strName        = _T("채널");
+    paramMode.strDescription = _T("추출할 채널을 선택하세요");
     paramMode.dMinVal        = 0.0;
     paramMode.dMaxVal        = 6.0;
     paramMode.dDefaultVal    = 0.0;
     paramMode.dCurrentVal    = 0.0;
     paramMode.nPrecision     = 0;
+    paramMode.vecOptions     = { _T("휘도(Luminance)"), _T("빨강(R)"), _T("녹색(G)"),
+                                  _T("파랑(B)"), _T("색조(H)"), _T("채도(S)"), _T("명도(V)") };
     m_params.push_back(paramMode);
 }
 

@@ -11,18 +11,19 @@
 CSharpening::CSharpening()
 {
     AlgorithmParam paramMethod;
-    paramMethod.strName        = _T("method");
-    paramMethod.strDescription = _T("0=UnsharpMask,1=Laplacian,2=HighBoost");
+    paramMethod.strName        = _T("방식");
+    paramMethod.strDescription = _T("선명화 방식을 선택하세요");
     paramMethod.dMinVal        = 0.0;
     paramMethod.dMaxVal        = 2.0;
     paramMethod.dDefaultVal    = 0.0;
     paramMethod.dCurrentVal    = 0.0;
     paramMethod.nPrecision     = 0;
+    paramMethod.vecOptions     = { _T("언샤프 마스크"), _T("라플라시안"), _T("하이 부스트") };
     m_params.push_back(paramMethod);
 
     AlgorithmParam paramStrength;
-    paramStrength.strName        = _T("strength");
-    paramStrength.strDescription = _T("Sharpening strength (0.1-5.0)");
+    paramStrength.strName        = _T("강도");
+    paramStrength.strDescription = _T("선명화 효과의 강도 (값이 클수록 더 선명하게)");
     paramStrength.dMinVal        = 0.1;
     paramStrength.dMaxVal        = 5.0;
     paramStrength.dDefaultVal    = 1.0;
@@ -31,8 +32,8 @@ CSharpening::CSharpening()
     m_params.push_back(paramStrength);
 
     AlgorithmParam paramRadius;
-    paramRadius.strName        = _T("radius");
-    paramRadius.strDescription = _T("Blur radius for UnsharpMask (1-10)");
+    paramRadius.strName        = _T("반경");
+    paramRadius.strDescription = _T("언샤프 마스크/하이 부스트의 블러 반경 (라플라시안 미사용)");
     paramRadius.dMinVal        = 1.0;
     paramRadius.dMaxVal        = 10.0;
     paramRadius.dDefaultVal    = 2.0;

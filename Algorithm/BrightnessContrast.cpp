@@ -14,18 +14,19 @@
 CBrightnessContrast::CBrightnessContrast()
 {
     AlgorithmParam paramMethod;
-    paramMethod.strName        = _T("method");
-    paramMethod.strDescription = _T("0=BC,1=Gamma,2=HistEq");
+    paramMethod.strName        = _T("방식");
+    paramMethod.strDescription = _T("밝기/대비 처리 방식을 선택하세요");
     paramMethod.dMinVal        = 0.0;
     paramMethod.dMaxVal        = 2.0;
     paramMethod.dDefaultVal    = 0.0;
     paramMethod.dCurrentVal    = 0.0;
     paramMethod.nPrecision     = 0;
+    paramMethod.vecOptions     = { _T("밝기/대비"), _T("감마 보정"), _T("히스토그램 균등화") };
     m_params.push_back(paramMethod);
 
     AlgorithmParam paramBrightness;
-    paramBrightness.strName        = _T("brightness");
-    paramBrightness.strDescription = _T("Brightness (-100 to 100)");
+    paramBrightness.strName        = _T("밝기");
+    paramBrightness.strDescription = _T("전체 밝기 조절 (-100: 어둡게, 0: 변화 없음, +100: 밝게)");
     paramBrightness.dMinVal        = -100.0;
     paramBrightness.dMaxVal        = 100.0;
     paramBrightness.dDefaultVal    = 0.0;
@@ -34,8 +35,8 @@ CBrightnessContrast::CBrightnessContrast()
     m_params.push_back(paramBrightness);
 
     AlgorithmParam paramContrast;
-    paramContrast.strName        = _T("contrast");
-    paramContrast.strDescription = _T("Contrast (-100 to 100)");
+    paramContrast.strName        = _T("대비");
+    paramContrast.strDescription = _T("명암 차이 강도 (-100: 낮은 대비, 0: 변화 없음, +100: 높은 대비)");
     paramContrast.dMinVal        = -100.0;
     paramContrast.dMaxVal        = 100.0;
     paramContrast.dDefaultVal    = 0.0;
@@ -44,8 +45,8 @@ CBrightnessContrast::CBrightnessContrast()
     m_params.push_back(paramContrast);
 
     AlgorithmParam paramGamma;
-    paramGamma.strName        = _T("gamma");
-    paramGamma.strDescription = _T("Gamma value (0.1-5.0, 1=no change)");
+    paramGamma.strName        = _T("감마값");
+    paramGamma.strDescription = _T("감마 보정값 (1.0=변화 없음, 1보다 작으면 어둡게, 크면 밝게)");
     paramGamma.dMinVal        = 0.1;
     paramGamma.dMaxVal        = 5.0;
     paramGamma.dDefaultVal    = 1.0;

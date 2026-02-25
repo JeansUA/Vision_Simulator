@@ -17,18 +17,20 @@
 CEdgeDetect::CEdgeDetect()
 {
     AlgorithmParam paramMethod;
-    paramMethod.strName        = _T("method");
-    paramMethod.strDescription = _T("0=Sobel,1=Prewitt,2=Canny,3=Laplacian");
+    paramMethod.strName        = _T("방식");
+    paramMethod.strDescription = _T("엣지 검출 방식을 선택하세요");
     paramMethod.dMinVal        = 0.0;
     paramMethod.dMaxVal        = 3.0;
     paramMethod.dDefaultVal    = 0.0;
     paramMethod.dCurrentVal    = 0.0;
     paramMethod.nPrecision     = 0;
+    paramMethod.vecOptions     = { _T("소벨(Sobel)"), _T("프리윗(Prewitt)"),
+                                    _T("캐니(Canny)"), _T("라플라시안(Laplacian)") };
     m_params.push_back(paramMethod);
 
     AlgorithmParam paramThreshold;
-    paramThreshold.strName        = _T("threshold");
-    paramThreshold.strDescription = _T("Low threshold (Canny=low, others=single)");
+    paramThreshold.strName        = _T("낮은 임계값");
+    paramThreshold.strDescription = _T("엣지 검출 하한 임계값 (캐니: 낮은 임계값, 나머지: 단일 기준)");
     paramThreshold.dMinVal        = 0.0;
     paramThreshold.dMaxVal        = 255.0;
     paramThreshold.dDefaultVal    = 50.0;
@@ -37,8 +39,8 @@ CEdgeDetect::CEdgeDetect()
     m_params.push_back(paramThreshold);
 
     AlgorithmParam paramHighThresh;
-    paramHighThresh.strName        = _T("highThresh");
-    paramHighThresh.strDescription = _T("High threshold (Canny only)");
+    paramHighThresh.strName        = _T("높은 임계값");
+    paramHighThresh.strDescription = _T("캐니 방식 전용 상한 임계값 — 이 이상이면 강한 엣지로 확정");
     paramHighThresh.dMinVal        = 0.0;
     paramHighThresh.dMaxVal        = 255.0;
     paramHighThresh.dDefaultVal    = 150.0;

@@ -143,6 +143,11 @@ void CVisionSimulatorDlg::CreateControls()
         m_miniLabels[i].Create(_T(""), WS_CHILD|WS_VISIBLE|SS_CENTER, CRect(0,0,10,10), this, IDC_MINI_LABEL1+i);
     }
 
+    // Log panel
+    m_grpLog.Create(_T("처리 로그"), WS_CHILD|WS_VISIBLE|BS_GROUPBOX, CRect(0,0,10,10), this, IDC_GRP_LOG);
+    m_editLog.Create(WS_CHILD|WS_VISIBLE|WS_BORDER|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL|ES_LEFT,
+        CRect(0,0,10,10), this, IDC_EDIT_LOG);
+
     // Status / Zoom
     m_staticStatus.Create(_T("Ready"), WS_CHILD|WS_VISIBLE|SS_LEFT|SS_SUNKEN, CRect(0,0,10,10), this, IDC_STATUS_TEXT);
     m_staticZoom.Create(_T("100%"),    WS_CHILD|WS_VISIBLE|SS_CENTER,          CRect(0,0,10,10), this, IDC_STATIC_ZOOM);
@@ -154,6 +159,7 @@ void CVisionSimulatorDlg::CreateControls()
     m_grpSequence.SetFont(&m_fontTitle);
     m_grpROI.SetFont(&m_fontTitle);
     m_grpHistory.SetFont(&m_fontTitle);
+    m_grpLog.SetFont(&m_fontTitle);
 
     // Initial states
     m_btnStop.EnableWindow(FALSE);
@@ -191,9 +197,16 @@ void CVisionSimulatorDlg::LayoutControls()
     int contentTop    = margin + toolbarH + margin;
     int contentBottom = H - statusH - margin - historyH - margin;
     int viewerW = W - rightW - margin * 3;
-    int viewerH = contentBottom - contentTop;
+    int logH    = 110;
+    int viewerH = (contentBottom - contentTop) - logH - margin;
+    if (viewerH < 100) viewerH = 100;
 
     m_mainViewer.MoveWindow(margin, contentTop, viewerW, viewerH);
+
+    // Log panel (below main viewer)
+    int logTop = contentTop + viewerH + margin;
+    m_grpLog.MoveWindow(margin, logTop, viewerW, logH);
+    m_editLog.MoveWindow(margin + 8, logTop + 18, viewerW - 16, logH - 24);
 
     // Right panel
     int rx = W - rightW - margin;
@@ -422,6 +435,8 @@ void CVisionSimulatorDlg::RunPreview()
     CImageBuffer previewOutput;
     bool success = false;
 
+    auto t0 = std::chrono::high_resolution_clock::now();
+
     if (rois.empty())
     {
         success = pAlg->Process(previewInput, previewOutput);
@@ -443,11 +458,40 @@ void CVisionSimulatorDlg::RunPreview()
         }
     }
 
+    auto t1 = std::chrono::high_resolution_clock::now();
+    long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
     if (success && previewOutput.IsValid())
     {
+        m_mainViewer.ClearOverlayInfo();
         m_mainViewer.SetImage(previewOutput);
-        SetStatus(_T("[Preview] ") + pAlg->GetName() + _T(" - Run to update history"));
+
+        CString status;
+        status.Format(_T("[미리보기] %s - %lldms"), (LPCTSTR)pAlg->GetName(), ms);
+        SetStatus(status);
+
+        CString logMsg;
+        logMsg.Format(_T("[미리보기] %s (%lldms)"), (LPCTSTR)pAlg->GetName(), ms);
+        AddLog(logMsg);
     }
+}
+
+void CVisionSimulatorDlg::AddLog(const CString& text)
+{
+    if (!::IsWindow(m_editLog.GetSafeHwnd())) return;
+
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    CString entry;
+    entry.Format(_T("[%02d:%02d:%02d.%03d] %s\r\n"),
+        st.wHour, st.wMinute, st.wSecond, st.wMilliseconds, (LPCTSTR)text);
+
+    int nLen = m_editLog.GetWindowTextLength();
+    m_editLog.SetSel(nLen, nLen);
+    m_editLog.ReplaceSel(entry);
+    // Scroll to bottom
+    m_editLog.SetSel(m_editLog.GetWindowTextLength(), m_editLog.GetWindowTextLength());
+    m_editLog.SendMessage(EM_SCROLLCARET);
 }
 
 // ---------------------------------------------------------------------------
@@ -462,11 +506,14 @@ void CVisionSimulatorDlg::OnBnClickedLoad()
     {
         if (m_originalImage.LoadFromFile(dlg.GetPathName()))
         {
+            m_mainViewer.ClearOverlayInfo();
             m_mainViewer.SetImage(m_originalImage);
             m_mainViewer.ClearROIs();
             m_sequenceManager.ClearROIs();
             ClearMiniViewers();
             UpdateROIList();
+            m_editLog.SetWindowText(_T(""));
+            AddLog(_T("이미지 로드: ") + dlg.GetFileName());
 
             CString s;
             s.Format(_T("Loaded: %s (%dx%d)"), (LPCTSTR)dlg.GetFileName(),
@@ -500,9 +547,17 @@ void CVisionSimulatorDlg::OnBnClickedRun()
     m_nSelectedMiniViewer = -1;
     for (int i = 0; i < 8; i++) m_miniViewers[i].SetSelected(false);
 
+    m_mainViewer.ClearOverlayInfo();
+
     m_btnRun.EnableWindow(FALSE);
     m_btnStop.EnableWindow(TRUE);
     SetStatus(_T("Processing..."));
+
+    // Reset log and record start
+    m_editLog.SetWindowText(_T(""));
+    CString logStart;
+    logStart.Format(_T("=== 처리 시작 (총 %d 스텝) ==="), m_sequenceManager.GetStepCount());
+    AddLog(logStart);
 
     m_sequenceManager.StartExecution(m_originalImage);
 }
@@ -517,13 +572,15 @@ void CVisionSimulatorDlg::OnBnClickedStop()
 
 void CVisionSimulatorDlg::OnBnClickedClear()
 {
+    m_mainViewer.ClearOverlayInfo();
     m_mainViewer.ClearImage();
     m_originalImage.Release();
     m_mainViewer.ClearROIs();
     m_sequenceManager.ClearROIs();
     ClearMiniViewers();
     UpdateROIList();
-    SetStatus(_T("Cleared"));
+    m_editLog.SetWindowText(_T(""));
+    SetStatus(_T("초기화 완료"));
     m_btnRun.EnableWindow(FALSE);
     m_btnSave.EnableWindow(FALSE);
 }
@@ -753,7 +810,47 @@ LRESULT CVisionSimulatorDlg::OnMiniViewerClicked(WPARAM wParam, LPARAM lParam)
     if (m_miniViewers[nIndex].HasImage())
     {
         m_mainViewer.SetImage(m_miniViewers[nIndex].GetImage());
-        SetStatus(_T("Viewing: ") + m_miniViewers[nIndex].GetLabel());
+
+        // Build green overlay with applied algorithm + params
+        CString overlayInfo;
+        if (nIndex == 0)
+        {
+            overlayInfo = _T("원본 이미지");
+        }
+        else
+        {
+            int stepIdx = nIndex - 1;
+            CAlgorithmBase* pStep = m_sequenceManager.GetStep(stepIdx);
+            if (pStep)
+            {
+                overlayInfo = pStep->GetName();
+                auto& params = pStep->GetParams();
+                for (int p = 0; p < (int)params.size(); p++)
+                {
+                    CString pval;
+                    if (!params[p].vecOptions.empty())
+                    {
+                        int iVal = (int)params[p].dCurrentVal;
+                        if (iVal >= 0 && iVal < (int)params[p].vecOptions.size())
+                            pval = params[p].vecOptions[iVal];
+                        else
+                            pval.Format(_T("%d"), iVal);
+                    }
+                    else if (params[p].nPrecision == 0)
+                        pval.Format(_T("%d"), (int)params[p].dCurrentVal);
+                    else
+                    {
+                        CString fmt;
+                        fmt.Format(_T("%%.%df"), params[p].nPrecision);
+                        pval.Format(fmt, params[p].dCurrentVal);
+                    }
+                    overlayInfo += _T("\n") + params[p].strName + _T(": ") + pval;
+                }
+            }
+        }
+        m_mainViewer.SetOverlayInfo(overlayInfo);
+
+        SetStatus(_T("뷰: ") + m_miniViewers[nIndex].GetLabel());
     }
     return 0;
 }
@@ -764,18 +861,43 @@ LRESULT CVisionSimulatorDlg::OnMiniViewerClicked(WPARAM wParam, LPARAM lParam)
 
 LRESULT CVisionSimulatorDlg::OnSequenceStepDone(WPARAM wParam, LPARAM lParam)
 {
+    int stepIdx   = (int)wParam;
+    long long elapsedMs = (long long)lParam;
+
     UpdateMiniViewers();
     const auto& history = m_sequenceManager.GetHistory();
     if (!history.empty())
+    {
+        m_mainViewer.ClearOverlayInfo();
         m_mainViewer.SetImage(history.back());
+    }
+
+    // Log step completion with timing
+    CAlgorithmBase* pStep = m_sequenceManager.GetStep(stepIdx);
+    CString algName = pStep ? pStep->GetName() : _T("Unknown");
+    CString s;
+    s.Format(_T("[완료] 스텝 %d - %s (%lldms)"), stepIdx + 1, (LPCTSTR)algName, elapsedMs);
+    AddLog(s);
+
     return 0;
 }
 
 LRESULT CVisionSimulatorDlg::OnSequenceProgress(WPARAM wParam, LPARAM lParam)
 {
+    int stepNum   = (int)wParam;
+    int stepTotal = (int)lParam;
+
     CString s;
-    s.Format(_T("Processing step %d of %d..."), (int)wParam, (int)lParam);
+    s.Format(_T("[스텝 %d/%d] 처리 중..."), stepNum, stepTotal);
     SetStatus(s);
+
+    // Log step start with algorithm name
+    CAlgorithmBase* pStep = m_sequenceManager.GetStep(stepNum - 1);
+    CString algName = pStep ? pStep->GetName() : _T("Unknown");
+    CString logMsg;
+    logMsg.Format(_T("[시작] 스텝 %d/%d - %s"), stepNum, stepTotal, (LPCTSTR)algName);
+    AddLog(logMsg);
+
     return 0;
 }
 
@@ -787,10 +909,14 @@ LRESULT CVisionSimulatorDlg::OnSequenceComplete(WPARAM wParam, LPARAM lParam)
 
     const auto& history = m_sequenceManager.GetHistory();
     if (!history.empty())
+    {
+        m_mainViewer.ClearOverlayInfo();
         m_mainViewer.SetImage(history.back());
+    }
 
     UpdateMiniViewers();
-    SetStatus(_T("Processing complete!"));
+    SetStatus(_T("처리 완료!"));
+    AddLog(_T("=== 모든 처리 완료 ==="));
     return 0;
 }
 
@@ -798,9 +924,12 @@ LRESULT CVisionSimulatorDlg::OnSequenceError(WPARAM wParam, LPARAM lParam)
 {
     CString* pMsg = reinterpret_cast<CString*>(lParam);
     CString errText = pMsg ? *pMsg : _T("Unknown error");
-    SetStatus(_T("Error: ") + errText);
+    SetStatus(_T("오류: ") + errText);
     m_btnRun.EnableWindow(TRUE);
     m_btnStop.EnableWindow(FALSE);
+    CString logErr;
+    logErr.Format(_T("[오류] 스텝 %d 처리 실패"), (int)wParam + 1);
+    AddLog(logErr);
     MessageBox(errText, _T("Processing Error"), MB_OK|MB_ICONERROR);
     return 0;
 }
