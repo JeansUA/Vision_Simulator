@@ -1,0 +1,35 @@
+# Visual Studio 빌드 결과물
+x64/
+Debug/
+Release/
+*.user
+*.aps
+*.pdb
+*.obj
+*.ilk
+*.exp
+*.lib
+*.idb
+*.ipch
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+
+# Visual Studio 캐시/임시 파일
+.vs/
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+
+# 로컬 설정 파일
+settings.local.json
+
+# Claude Code 메모리 (개인 설정)
+.claude/
+
+# 중복 구조 (구버전 프로젝트)
+Vision_Simulator/
+
+# 빌드 로그
+build_log.txt

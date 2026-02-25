@@ -1,0 +1,104 @@
+// Microsoft Visual C++ generated resource script.
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+#include "afxres.h"
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Korean (Korea) resources
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+// TEXTINCLUDE
+1 TEXTINCLUDE
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)\r\n"
+    "LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT\r\n"
+    "#include ""res\\VisionSimulator.rc2""\r\n"
+    "#include ""afxres.rc""\r\n"
+    "#endif\r\n"
+    "\0"
+END
+#endif    // APSTUDIO_INVOKED
+
+/////////////////////////////////////////////////////////////////////////////
+// Dialog
+IDD_VISIONSIMULATOR_DIALOG DIALOGEX 0, 0, 640, 480
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Vision Simulator v1.0"
+FONT 9, "Segoe UI", 400, 0, 0x01
+BEGIN
+END
+
+/////////////////////////////////////////////////////////////////////////////
+// Icon
+IDR_MAINFRAME           ICON                    "res\\VisionSimulator.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+// Version
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041204b0"
+        BEGIN
+            VALUE "FileDescription", "Vision Simulator Application"
+            VALUE "FileVersion", "1.0.0.1"
+            VALUE "InternalName", "VisionSimulator.exe"
+            VALUE "OriginalFilename", "VisionSimulator.exe"
+            VALUE "ProductName", "Vision Simulator"
+            VALUE "ProductVersion", "1.0.0.1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x412, 1200
+    END
+END
+
+#endif    // Korean (Korea) resources
+
+/////////////////////////////////////////////////////////////////////////////
+// English (United States) resources
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+/////////////////////////////////////////////////////////////////////////////
+// String Table
+STRINGTABLE
+BEGIN
+    IDD_VISIONSIMULATOR_DIALOG "Vision Simulator"
+END
+
+#endif    // English (United States) resources
