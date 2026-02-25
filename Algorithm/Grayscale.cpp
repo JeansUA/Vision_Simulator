@@ -121,12 +121,9 @@ bool CGrayscale::Process(const CImageBuffer& input, CImageBuffer& output)
 
                 switch (nMode)
                 {
-                case 0: // Luminance
-                {
-                    int nGray = (int)(0.299 * bR + 0.587 * bG + 0.114 * bB + 0.5);
-                    bOut = (BYTE)max(0, min(255, nGray));
+                case 0: // Luminance — integer: (77R+150G+29B)>>8 ≈ 0.301R+0.586G+0.113B
+                    bOut = (BYTE)((77 * bR + 150 * bG + 29 * bB) >> 8);
                     break;
-                }
                 case 1: bOut = bR; break;   // R channel
                 case 2: bOut = bG; break;   // G channel
                 case 3: bOut = bB; break;   // B channel

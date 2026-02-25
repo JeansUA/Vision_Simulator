@@ -11,6 +11,8 @@ public:
     ~CImageBuffer();
 
     bool Create(int width, int height, int channels = 3);
+    bool CopyDataFrom(const CImageBuffer& src);              // reuse allocation, memcpy only
+    bool ExtractRegionInto(const CRect& rc, CImageBuffer& dst) const;  // ROI without alloc
     bool LoadFromFile(const CString& filePath);
     bool SaveToFile(const CString& filePath);
     CImageBuffer Clone() const;

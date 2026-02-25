@@ -82,7 +82,7 @@ bool CSequenceManager::StartExecution(const CImageBuffer& input)
         m_pThread = nullptr;
     }
 
-    m_inputImage = input.Clone();
+    m_inputImage.CopyDataFrom(input);  // reuse m_inputImage allocation (0 malloc after 1st run)
     m_history.clear();
     m_history.push_back(m_inputImage.Clone());  // history[0] = original
 
@@ -136,6 +136,10 @@ void CSequenceManager::DoExecute()
     std::vector<CRect> rois = m_rcROIs;
     bool bHasROIs = !rois.empty();
 
+    // Ensure we have enough pre-allocated buffer sets (persistent across runs)
+    if ((int)m_stepBufs.size() < stepCount)
+        m_stepBufs.resize(stepCount);
+
     for (int i = 0; i < stepCount; i++)
     {
         if (m_bStopRequested) break;
@@ -144,15 +148,15 @@ void CSequenceManager::DoExecute()
         if (m_hNotifyWnd && ::IsWindow(m_hNotifyWnd))
             ::PostMessage(m_hNotifyWnd, WM_SEQUENCE_PROGRESS, (WPARAM)(i + 1), (LPARAM)stepCount);
 
-        // Get input: clone last history entry
-        CImageBuffer input;
+        // Copy input from history into pre-allocated buffer (no malloc after 1st run)
         {
             CSingleLock lock(&m_cs, TRUE);
             if (!m_history.empty())
-                input = m_history.back().Clone();
+                m_stepBufs[i].stepInput.CopyDataFrom(m_history.back());
         }
 
-        if (!input.IsValid())
+        CImageBuffer& inp = m_stepBufs[i].stepInput;
+        if (!inp.IsValid())
         {
             if (m_hNotifyWnd && ::IsWindow(m_hNotifyWnd))
                 ::PostMessage(m_hNotifyWnd, WM_SEQUENCE_ERROR, (WPARAM)i, 0);
@@ -175,42 +179,35 @@ void CSequenceManager::DoExecute()
             return;
         }
 
-        // Run algorithm WITHOUT holding mutex (allows OpenMP parallelism inside)
-        CImageBuffer output;
-        bool success = false;
+        // Prepare ROI buffers (smart Create = no alloc if size unchanged)
+        m_stepBufs[i].Prepare(inp.GetWidth(), inp.GetHeight(), inp.GetChannels(), rois);
+        CImageBuffer& outRef = m_stepBufs[i].stepOutput;
 
+        // Run algorithm WITHOUT holding mutex (allows OpenMP parallelism inside)
+        bool success = false;
         auto tStepStart = std::chrono::high_resolution_clock::now();
 
         if (!bHasROIs)
         {
-            // No ROI: process full image
-            success = pStep->Process(input, output);
+            // No ROI: process full image into pre-alloc output (smart Create inside Process)
+            success = pStep->Process(inp, outRef);
         }
         else
         {
-            // Process each ROI and composite result
-            output = input.Clone();
-            success = output.IsValid();
-
+            // Composite: copy input into output, then overwrite each ROI region
+            success = outRef.CopyDataFrom(inp);
             if (success)
             {
-                for (const CRect& roi : rois)
+                for (int j = 0; j < (int)rois.size(); j++)
                 {
                     if (m_bStopRequested) { success = false; break; }
-
-                    CImageBuffer roiIn = input.ExtractRegion(roi);
-                    if (!roiIn.IsValid()) continue;  // skip invalid ROI
-
-                    CImageBuffer roiOut;
-                    if (pStep->Process(roiIn, roiOut) && roiOut.IsValid())
+                    if (!inp.ExtractRegionInto(rois[j], m_stepBufs[i].roiIn[j])) continue;
+                    if (pStep->Process(m_stepBufs[i].roiIn[j], m_stepBufs[i].roiOut[j])
+                        && m_stepBufs[i].roiOut[j].IsValid())
                     {
-                        output.PasteRegion(roiOut, roi.left, roi.top);
+                        outRef.PasteRegion(m_stepBufs[i].roiOut[j], rois[j].left, rois[j].top);
                     }
-                    else
-                    {
-                        success = false;
-                        break;
-                    }
+                    else { success = false; break; }
                 }
             }
         }
@@ -218,11 +215,12 @@ void CSequenceManager::DoExecute()
         auto tStepEnd = std::chrono::high_resolution_clock::now();
         long long elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(tStepEnd - tStepStart).count();
 
-        if (success && output.IsValid())
+        if (success && outRef.IsValid())
         {
             {
                 CSingleLock lock(&m_cs, TRUE);
-                m_history.push_back(std::move(output));
+                // Clone outRef into history (outRef stays alive for next run's reuse)
+                m_history.push_back(outRef.Clone());
             }
             if (m_hNotifyWnd && ::IsWindow(m_hNotifyWnd))
                 ::PostMessage(m_hNotifyWnd, WM_SEQUENCE_STEP_DONE, (WPARAM)i, (LPARAM)elapsedMs);

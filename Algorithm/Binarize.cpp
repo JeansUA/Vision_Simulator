@@ -62,12 +62,12 @@ CString CBinarize::GetName() const        { return _T("Binarize"); }
 CString CBinarize::GetDescription() const { return _T("Standard/Reverse/Double/Adaptive/Otsu"); }
 std::vector<AlgorithmParam>& CBinarize::GetParams() { return m_params; }
 
-// Compute grayscale value from a row pointer
+// Integer luminance: (77*R + 150*G + 29*B) >> 8  ≈  0.301R + 0.586G + 0.113B
 static inline BYTE toGray(const BYTE* pRow, int x, int nChannels)
 {
     if (nChannels == 1) return pRow[x];
-    BYTE b = pRow[x * nChannels], g = pRow[x * nChannels + 1], r = pRow[x * nChannels + 2];
-    return (BYTE)max(0, min(255, (int)(0.299 * r + 0.587 * g + 0.114 * b + 0.5)));
+    const BYTE* p = pRow + x * nChannels;
+    return (BYTE)((29 * p[0] + 150 * p[1] + 77 * p[2]) >> 8);  // BGR layout
 }
 
 // Compute Otsu threshold from histogram
@@ -125,14 +125,14 @@ bool CBinarize::Process(const CImageBuffer& input, CImageBuffer& output)
     int         nSrcStride = input.GetStride();
     int         nDstStride = output.GetStride();
 
-    // Build grayscale buffer (needed for Otsu and Adaptive)
-    std::vector<BYTE> grayBuf(nWidth * nHeight);
+    // Build grayscale buffer — reuse m_grayBuf allocation (no malloc after 1st call)
+    m_grayBuf.resize(nWidth * nHeight);
 #pragma omp parallel for schedule(static)
     for (int y = 0; y < nHeight; y++)
     {
         const BYTE* pRow = pSrc + y * nSrcStride;
         for (int x = 0; x < nWidth; x++)
-            grayBuf[y * nWidth + x] = toGray(pRow, x, nChannels);
+            m_grayBuf[y * nWidth + x] = toGray(pRow, x, nChannels);
     }
 
     // Compute Otsu threshold if needed
@@ -140,15 +140,14 @@ bool CBinarize::Process(const CImageBuffer& input, CImageBuffer& output)
     {
         int hist[256] = {};
         for (int i = 0; i < nWidth * nHeight; i++)
-            hist[grayBuf[i]]++;
+            hist[m_grayBuf[i]]++;
         nThreshold = ComputeOtsu(hist, nWidth * nHeight);
     }
 
-    // Adaptive: compute local mean thresholds
-    std::vector<int> localThresh;
+    // Adaptive: compute local mean thresholds — reuse m_localThresh allocation
     if (nMethod == 3)
     {
-        localThresh.resize(nWidth * nHeight);
+        m_localThresh.resize(nWidth * nHeight);
         int nHalf = nBlockSize / 2;
         int C     = nThreshold / 8;  // constant subtracted from mean
 
@@ -165,11 +164,11 @@ bool CBinarize::Process(const CImageBuffer& input, CImageBuffer& output)
                     for (int kx = -nHalf; kx <= nHalf; kx++)
                     {
                         int sx = max(0, min(nWidth - 1, x + kx));
-                        sum += grayBuf[sy * nWidth + sx];
+                        sum += m_grayBuf[sy * nWidth + sx];
                         cnt++;
                     }
                 }
-                localThresh[y * nWidth + x] = (int)(sum / cnt) - C;
+                m_localThresh[y * nWidth + x] = (int)(sum / cnt) - C;
             }
         }
     }
@@ -181,7 +180,7 @@ bool CBinarize::Process(const CImageBuffer& input, CImageBuffer& output)
         BYTE* pDstRow = pDst + y * nDstStride;
         for (int x = 0; x < nWidth; x++)
         {
-            int gray = grayBuf[y * nWidth + x];
+            int gray = m_grayBuf[y * nWidth + x];
             BYTE bOut = 0;
 
             switch (nMethod)
@@ -196,7 +195,7 @@ bool CBinarize::Process(const CImageBuffer& input, CImageBuffer& output)
                 bOut = (gray >= nThreshold && gray <= nThreshold2) ? 255 : 0;
                 break;
             case 3: // Adaptive
-                bOut = (gray > localThresh[y * nWidth + x]) ? 255 : 0;
+                bOut = (gray > m_localThresh[y * nWidth + x]) ? 255 : 0;
                 break;
             case 4: // Otsu (threshold already computed)
                 bOut = (gray > nThreshold) ? 255 : 0;

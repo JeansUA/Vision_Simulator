@@ -14,4 +14,6 @@ public:
 
 private:
     std::vector<AlgorithmParam> m_params;
+    std::vector<BYTE>           m_grayBuf;    // persists between calls (avoids page faults)
+    std::vector<int>            m_localThresh; // persists between calls (adaptive mode)
 };

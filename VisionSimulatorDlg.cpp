@@ -454,26 +454,16 @@ void CVisionSimulatorDlg::QueuePreview()
     CAlgorithmBase* pAlg = m_paramPanel.GetAlgorithm();
     if (!pAlg) return;
 
-    // Build input image for preview
-    CImageBuffer input;
-    if (m_nEditingSequenceStep > 0)
-    {
-        const auto& history = m_sequenceManager.GetHistory();
-        if ((int)history.size() > m_nEditingSequenceStep)
-            input = history[m_nEditingSequenceStep].Clone();
-        else
-            input = m_originalImage.Clone();
-    }
-    else
-    {
-        input = m_originalImage.Clone();
-    }
-    if (!input.IsValid()) return;
+    // Determine source image (no Clone — CopyDataFrom reuses m_previewInputBuf allocation)
+    const CImageBuffer* pSrc = &m_originalImage;
+    const auto& history = m_sequenceManager.GetHistory();
+    if (m_nEditingSequenceStep > 0 && (int)history.size() > m_nEditingSequenceStep)
+        pSrc = &history[m_nEditingSequenceStep];
 
-    // Pack data for thread
+    // Pack data for thread — CopyDataFrom avoids malloc after first call
     {
         CSingleLock lock(&m_csPreview, TRUE);
-        m_previewInputBuf = std::move(input);
+        m_previewInputBuf.CopyDataFrom(*pSrc);   // 0 malloc after 1st call (same size)
         if (m_pPreviewAlgCopy) { delete m_pPreviewAlgCopy; m_pPreviewAlgCopy = nullptr; }
         m_pPreviewAlgCopy = pAlg->Clone();
         m_previewROIs     = m_mainViewer.GetROIs();
@@ -489,6 +479,13 @@ UINT CVisionSimulatorDlg::PreviewThreadProc(LPVOID pParam)
     CVisionSimulatorDlg* pDlg = reinterpret_cast<CVisionSimulatorDlg*>(pParam);
     HANDLE events[2] = { pDlg->m_hPreviewReady, pDlg->m_hPreviewStop };
 
+    // Thread-local persistent buffers — survive between previews so OS pages stay warm.
+    // After the first preview these are reused without any malloc or page fault.
+    CImageBuffer              threadInput;
+    CImageBuffer              threadOutput;
+    std::vector<CImageBuffer> threadROIIn;
+    std::vector<CImageBuffer> threadROIOut;
+
     while (true)
     {
         DWORD dw = ::WaitForMultipleObjects(2, events, FALSE, INFINITE);
@@ -496,45 +493,50 @@ UINT CVisionSimulatorDlg::PreviewThreadProc(LPVOID pParam)
         if (dw != WAIT_OBJECT_0) continue;
 
 restart:
-        // Grab data
-        CImageBuffer input;
+        // Grab data — CopyDataFrom under lock (brief ~0.5ms hold for 6MB copy)
         CAlgorithmBase* pAlg = nullptr;
         std::vector<CRect> rois;
         {
             CSingleLock lock(&pDlg->m_csPreview, TRUE);
             if (!pDlg->m_bNewPreviewPending) continue;
-            input = std::move(pDlg->m_previewInputBuf);
-            pAlg  = pDlg->m_pPreviewAlgCopy;
+            threadInput.CopyDataFrom(pDlg->m_previewInputBuf);  // 0 malloc after 1st call
+            pAlg = pDlg->m_pPreviewAlgCopy;
             pDlg->m_pPreviewAlgCopy = nullptr;
-            rois  = pDlg->m_previewROIs;
+            rois = pDlg->m_previewROIs;
             pDlg->m_bNewPreviewPending = false;
         }
-        if (!input.IsValid() || !pAlg) { delete pAlg; continue; }
+        if (!threadInput.IsValid() || !pAlg) { delete pAlg; continue; }
 
         pDlg->m_bPreviewCancel = false;
 
+        // Prepare ROI buffers (smart Create = 0 malloc if size unchanged)
+        threadROIIn.resize(rois.size());
+        threadROIOut.resize(rois.size());
+        for (int j = 0; j < (int)rois.size(); j++)
+        {
+            threadROIIn[j].Create(rois[j].Width(), rois[j].Height(), threadInput.GetChannels());
+            threadROIOut[j].Create(rois[j].Width(), rois[j].Height(), threadInput.GetChannels());
+        }
+
         auto t0 = std::chrono::high_resolution_clock::now();
-        CImageBuffer* pOutput = new CImageBuffer();
         bool success = false;
 
         if (rois.empty())
         {
-            success = pAlg->Process(input, *pOutput);
+            // Smart Create inside Process reuses threadOutput allocation
+            success = pAlg->Process(threadInput, threadOutput);
         }
         else
         {
-            *pOutput = input.Clone();
-            success  = pOutput->IsValid();
+            success = threadOutput.CopyDataFrom(threadInput);  // composite base
             if (success)
             {
-                for (const CRect& roi : rois)
+                for (int j = 0; j < (int)rois.size(); j++)
                 {
                     if (pDlg->m_bPreviewCancel) { success = false; break; }
-                    CImageBuffer roiIn = input.ExtractRegion(roi);
-                    if (!roiIn.IsValid()) continue;
-                    CImageBuffer roiOut;
-                    if (pAlg->Process(roiIn, roiOut) && roiOut.IsValid())
-                        pOutput->PasteRegion(roiOut, roi.left, roi.top);
+                    if (!threadInput.ExtractRegionInto(rois[j], threadROIIn[j])) continue;
+                    if (pAlg->Process(threadROIIn[j], threadROIOut[j]) && threadROIOut[j].IsValid())
+                        threadOutput.PasteRegion(threadROIOut[j], rois[j].left, rois[j].top);
                 }
             }
         }
@@ -546,12 +548,11 @@ restart:
 
         if (success && !pDlg->m_bPreviewCancel && ::IsWindow(pDlg->GetSafeHwnd()))
         {
+            // One malloc per result to hand off to UI thread (unavoidable — thread reuses threadOutput)
+            CImageBuffer* pResult = new CImageBuffer();
+            pResult->CopyDataFrom(threadOutput);
             ::PostMessage(pDlg->GetSafeHwnd(), WM_PREVIEW_RESULT,
-                reinterpret_cast<WPARAM>(pOutput), static_cast<LPARAM>(ms));
-        }
-        else
-        {
-            delete pOutput;
+                reinterpret_cast<WPARAM>(pResult), static_cast<LPARAM>(ms));
         }
 
         // If another preview was queued while we ran, restart immediately

@@ -5,6 +5,30 @@
 #include "Utils/CommonTypes.h"
 #include <vector>
 
+// Pre-allocated buffer set for one pipeline step.
+// Buffers are kept alive between runs so OS pages stay warm (eliminates page faults).
+struct PipelineBuffers
+{
+    CImageBuffer              stepInput;   // copy of previous step's output
+    CImageBuffer              stepOutput;  // this step's result
+    std::vector<CImageBuffer> roiIn;       // per-ROI extracted inputs
+    std::vector<CImageBuffer> roiOut;      // per-ROI algorithm outputs
+
+    // Ensure all buffers are at least the right size; reallocates only on dimension change.
+    void Prepare(int w, int h, int ch, const std::vector<CRect>& rois)
+    {
+        stepInput.Create(w, h, ch);
+        stepOutput.Create(w, h, ch);
+        if (roiIn.size()  != rois.size()) roiIn.resize(rois.size());
+        if (roiOut.size() != rois.size()) roiOut.resize(rois.size());
+        for (int j = 0; j < (int)rois.size(); j++)
+        {
+            roiIn[j].Create(rois[j].Width(), rois[j].Height(), ch);
+            roiOut[j].Create(rois[j].Width(), rois[j].Height(), ch);
+        }
+    }
+};
+
 class CSequenceManager {
 public:
     CSequenceManager();
@@ -52,6 +76,7 @@ private:
     std::vector<CImageBuffer>    m_history;
     std::vector<CRect>           m_rcROIs;
     CImageBuffer                 m_inputImage;
+    std::vector<PipelineBuffers> m_stepBufs;   // persistent per-step buffer sets
     CWinThread*                  m_pThread;
     volatile bool                m_bRunning;
     volatile bool                m_bStopRequested;

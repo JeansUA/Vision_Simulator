@@ -92,6 +92,10 @@ bool CImageBuffer::Create(int width, int height, int channels)
         return false;
     }
 
+    // Smart reuse: skip reallocation if dimensions unchanged (eliminates page faults)
+    if (m_pData && m_nWidth == width && m_nHeight == height && m_nChannels == channels)
+        return true;
+
     Release();
 
     m_nWidth = width;
@@ -636,6 +640,33 @@ CImageBuffer CImageBuffer::ExtractRegion(const CRect& rcRegion) const
     }
 
     return region;
+}
+
+// Copy pixel data into this buffer reusing existing allocation when possible
+bool CImageBuffer::CopyDataFrom(const CImageBuffer& src)
+{
+    if (!src.IsValid()) return false;
+    if (!Create(src.m_nWidth, src.m_nHeight, src.m_nChannels)) return false;
+    const int rowBytes = m_nWidth * m_nChannels;
+    for (int y = 0; y < m_nHeight; y++)
+        memcpy(m_pData + y * m_nStride, src.m_pData + y * src.m_nStride, rowBytes);
+    return true;
+}
+
+// Extract a ROI into an existing buffer (no allocation if dst already matches size)
+bool CImageBuffer::ExtractRegionInto(const CRect& rc, CImageBuffer& dst) const
+{
+    if (!IsValid()) return false;
+    int x0 = max(0, (int)rc.left),  y0 = max(0, (int)rc.top);
+    int x1 = min(m_nWidth, (int)rc.right), y1 = min(m_nHeight, (int)rc.bottom);
+    int regW = x1 - x0, regH = y1 - y0;
+    if (regW <= 0 || regH <= 0) return false;
+    if (!dst.Create(regW, regH, m_nChannels)) return false;
+    const int rowBytes = regW * m_nChannels;
+    for (int y = 0; y < regH; y++)
+        memcpy(dst.m_pData + y * dst.m_nStride,
+               m_pData + (y + y0) * m_nStride + x0 * m_nChannels, rowBytes);
+    return true;
 }
 
 void CImageBuffer::PasteRegion(const CImageBuffer& source, int destX, int destY)
